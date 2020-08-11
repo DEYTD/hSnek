@@ -14,11 +14,13 @@ Download .zip from releases -> ensure that dll and exe are in the same directory
 
 ### From source
 
+Get stack: https://docs.haskellstack.org/en/stable/README/
+
+Then:
 ```sh
 git clone https://github.com/DEYTD/hSnek.git
 cd hSnek
-stack build apecs-gloss
-stack ghc hSnek.hs
+stack build
 ```
 
 ## Controls
