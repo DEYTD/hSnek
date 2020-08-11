@@ -2,14 +2,33 @@
 
 ![](Screene.PNG)
 
-This is a simple 4d game of snake, projected on 4 separate 2d planes, each of 4 lines in the middle represents one coordinate axis.
+This is a simple 4D Snake game, projected on 4 separate 2D planes, each of 4 lines in the middle represents one coordinate axis.
 
-# Installation
+## Installation
 
-Download .zip from releases -> ensure that dll and exe are in the same directory -> done
+### From releases (Windows only)
 
-# Controls
+* Download .zip from [releases](https://github.com/DEYTD/hSnek/releases)
+* ensure that dll and exe are in the same directory
+* Launch the game `hSnek.exe`
 
-WASD, arrow keys - movement
-R - restart
-(controls only work with an English keyboard layout)
+### From source
+
+You need to have [Haskell Stack](https://haskellstack.org) installed.
+
+```sh
+git clone https://github.com/DEYTD/hSnek.git
+cd hSnek
+stack build
+stack ghc
+./hSnek
+```
+
+## Controls
+
+> controls only work with an English keyboard layout
+
+* WASD, arrow keys - movement
+* R - restart
+
+
