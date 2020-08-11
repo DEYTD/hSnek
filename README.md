@@ -23,7 +23,7 @@ cd hSnek
 stack build
 ```
 
-result is in .stack-work/install/.../bin
+result is in .stack-work/install/.../bin, but you can run it with ```stack exec hSnek``` as well
 
 ## Controls
 
