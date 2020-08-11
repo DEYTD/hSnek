@@ -1,6 +1,8 @@
 # hSnek
 
-![](Screene.PNG)
+<p align="center">
+  <img src="screen.png" />
+</p>
 
 This is a simple 4d game of snake, projected on 4 separate 2d planes, each of 4 lines in the middle represents one coordinate axis.
 
