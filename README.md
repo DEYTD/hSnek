@@ -23,6 +23,8 @@ cd hSnek
 stack build
 ```
 
+result is in .stack-work/install/.../bin
+
 ## Controls
 
 WASD, arrow keys - movement
