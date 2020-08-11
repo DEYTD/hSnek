@@ -1,0 +1,29 @@
+name: hSnek
+version: 0.1.0.0
+git: https://github.com/DEYTD/hSnek
+
+extra-source-files:
+- README.md
+- ChangeLog.md
+
+dependencies:
+- base >= 4.7 && < 5
+- linear
+- apecs
+- apecs-gloss
+- gloss
+- random
+
+library:
+   source-dirs: src
+
+executables:
+  hSnek:
+    main: Main.hs
+    source-dirs: app
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-maxN4
+    dependencies:
+    - hSnek
