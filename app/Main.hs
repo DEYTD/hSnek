@@ -76,8 +76,8 @@ stepDir = do
   if null queue
     then return()
     else do
-      global $= InputQueue (tail queue)
-      cmap $ \(d :: Direction) -> if d /= opposite (head queue) then (head queue) else (d)
+      global $= InputQueue (init queue)
+      cmap $ \(d :: Direction) -> if d /= opposite (last queue) then (last queue) else (d)
 
 newApple :: System' ()
 newApple = cmapM_ $ \(Snake snek) -> do
