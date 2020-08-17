@@ -17,10 +17,10 @@ import Control.Monad
 import Data.Monoid
 import Data.Semigroup (Semigroup)
 
-newtype Snake = Snake ([V4 Float]) deriving Show
+newtype Snake = Snake [V4 Float] deriving Show
 instance Component Snake where type Storage Snake = Unique Snake
 
-data Direction = DirXpos | DirXneg | DirYpos | DirYneg | DirZpos | DirZneg | DirWpos | DirWneg
+data Direction = DirXpos | DirXneg | DirYpos | DirYneg | DirZpos | DirZneg | DirWpos | DirWneg deriving (Show, Eq)
 instance Component Direction where type Storage Direction = Unique Direction
 
 newtype Apple = Apple (V4 Float) deriving Show
@@ -29,17 +29,15 @@ instance Component Apple where type Storage Apple = Unique Apple
 newtype DeathScreen = DeathScreen (V4 Float, V4 Float) deriving Show
 instance Component DeathScreen where type Storage DeathScreen = Unique DeathScreen
 
-newtype Dead = Dead Bool deriving Show
-instance Semigroup Dead where (<>) a b = b
-instance Monoid Dead where mempty = Dead False
-instance Component Dead where type Storage Dead = Global Dead
+newtype InputQueue = InputQueue [Direction] deriving (Show, Semigroup, Monoid)
+instance Component InputQueue where type Storage InputQueue = Global InputQueue
 
 newtype Time = Time Float deriving (Show, Num)
 instance Semigroup Time where (<>) = (+)
 instance Monoid Time where mempty = 0
 instance Component Time where type Storage Time = Global Time
 
-makeWorld "World" [''Snake, ''Direction, ''Apple, ''DeathScreen, ''Dead, ''Time, ''Camera]
+makeWorld "World" [''Snake, ''Direction, ''Apple, ''DeathScreen, ''InputQueue, ''Time, ''Camera]
 
 type System' a = System World a
 
@@ -54,6 +52,32 @@ initialize = do
 
 incrTime :: Float -> System' ()
 incrTime dT = modify global $ \(Time t) -> Time (t+dT)
+
+triggerEvery :: Float -> Float -> Float -> System' a -> System' ()
+triggerEvery dT period phase sys = do
+  Time t <- get global
+  let t' = t + phase
+      trigger = floor (t'/period) /= floor ((t'+dT)/period)
+  when trigger $ void sys
+
+opposite :: Direction -> Direction
+opposite DirXpos = DirXneg
+opposite DirXneg = DirXpos
+opposite DirYpos = DirYneg
+opposite DirYneg = DirYpos
+opposite DirZpos = DirZneg
+opposite DirZneg = DirZpos
+opposite DirWpos = DirWneg
+opposite DirWneg = DirWpos
+
+stepDir :: System' ()
+stepDir = do
+  InputQueue queue <- get global
+  if null queue
+    then return()
+    else do
+      global $= InputQueue (tail queue)
+      cmap $ \(d :: Direction) -> if d /= opposite (head queue) then (head queue) else (d)
 
 newApple :: System' ()
 newApple = cmapM_ $ \(Snake snek) -> do
@@ -85,79 +109,41 @@ stepPosition = cmap $ \(Snake snek@(h : _), d :: Direction) -> Snake (moveHead d
 growTail :: System' ()
 growTail = cmap $ \(Snake snek@(h : _), d :: Direction) -> Snake (moveHead d h : snek)
 
-killSnek :: System' ()
-killSnek = cmapM_ $ \(Snake (h : _), d :: Direction) -> do
-  dsEty <- newEntity (DeathScreen (moveHead d h, h))
-  set global (Dead True)
-
 stepSnek :: System' ()
 stepSnek = cmapM_ $ \(Apple apos) -> cmapM_ $ \(Snake snek@(h : _), d :: Direction) -> do
   let ns@(V4 x y w z) = moveHead d h
-  Dead dead <- get global
+  dead <- cfold (\_ (ds :: DeathScreen) -> True) False
   if dead
     then return ()
     else if ns `elem` snek || any (\a -> a > 160 || a < -160) [x, y, z, w]
-      then killSnek
+      then void $ newEntity (DeathScreen (ns, h))
       else if apos /= ns
         then stepPosition
         else do
           growTail
           newApple
 
-triggerEvery :: Float -> Float -> Float -> System' a -> System' ()
-triggerEvery dT period phase sys = do
-  Time t <- get global
-  let t' = t + phase
-      trigger = floor (t'/period) /= floor ((t'+dT)/period)
-  when trigger $ void sys
-
 step :: Float -> System' ()
 step dT = do
   incrTime dT
-  triggerEvery dT stepTime 0 stepSnek
+  triggerEvery dT stepTime 0 $ stepDir >> stepSnek
 
 restartGame :: System' ()
 restartGame = cmapM_ $ \ (DeathScreen ds, dsEty) -> do 
-  snekEty <- newEntity (Snake [V4 0 0 0 0], DirYpos)
-  replicateM_ 7 growTail
-  newApple
+  initialize
   destroy dsEty (Proxy :: Proxy DeathScreen)
-  set global (Dead False)
 
 handleEvent :: Event -> System' ()
-handleEvent (EventKey (SpecialKey KeyLeft)  Down   _ _) =
-  cmap $ \(d :: Direction) -> case d of
-    DirXpos -> d
-    _ -> DirXneg
-handleEvent (EventKey (SpecialKey KeyRight) Down _ _) =
-  cmap $ \(d :: Direction) -> case d of
-    DirXneg -> d
-    _ -> DirXpos
-handleEvent (EventKey (SpecialKey KeyUp) Down   _ _) =
-  cmap $ \(d :: Direction) -> case d of
-    DirYneg -> d
-    _ -> DirYpos
-handleEvent (EventKey (SpecialKey KeyDown) Down _ _) =
-  cmap $ \(d :: Direction) -> case d of
-    DirYpos -> d
-    _ -> DirYneg
-handleEvent (EventKey (Char 'a')  Down   _ _) =
-  cmap $ \(d :: Direction) -> case d of
-    DirWpos -> d
-    _ -> DirWneg
-handleEvent (EventKey (Char 'd') Down _ _) =
-  cmap $ \(d :: Direction) -> case d of
-    DirWneg -> d
-    _ -> DirWpos
-handleEvent (EventKey (Char 'w') Down   _ _) =
-  cmap $ \(d :: Direction) -> case d of
-    DirZneg -> d
-    _ -> DirZpos
-handleEvent (EventKey (Char 's') Down _ _) =
-  cmap $ \(d :: Direction) -> case d of
-    DirZpos -> d
-    _ -> DirZneg
+handleEvent (EventKey (SpecialKey KeyLeft)  Down   _ _) = global $~ mappend (InputQueue [DirXneg])
+handleEvent (EventKey (SpecialKey KeyRight) Down _ _) = global $~ mappend (InputQueue [DirXpos])
+handleEvent (EventKey (SpecialKey KeyUp) Down   _ _) = global $~ mappend (InputQueue [DirYpos])
+handleEvent (EventKey (SpecialKey KeyDown) Down _ _) = global $~ mappend (InputQueue [DirYneg])
+handleEvent (EventKey (Char 'a')  Down   _ _) = global $~ mappend (InputQueue [DirWneg])
+handleEvent (EventKey (Char 'd') Down _ _) = global $~ mappend (InputQueue [DirWpos])
+handleEvent (EventKey (Char 'w') Down   _ _) = global $~ mappend (InputQueue [DirZpos])
+handleEvent (EventKey (Char 's') Down _ _) = global $~ mappend (InputQueue [DirZneg])
 handleEvent (EventKey (Char 'r') Down _ _) = restartGame
+handleEvent (EventKey (SpecialKey KeyEsc) Down   _ _) = liftIO exitSuccess
 handleEvent _ = return ()
 
 translatexy, translatexz, translatewz, translatewy :: V4 Float -> Picture -> Picture
@@ -180,23 +166,14 @@ box size = l <> r <> u <> d <> hLine size <> vLine size
         u = translate 0 (size / 2 - 0.5) $ hLine size
         d = translate 0 ((-size) / 2 + 0.5) $ hLine size
 
+translateSquares :: [V4 Float] -> Picture
+translateSquares pos = pictures $ concatMap (\x -> [translatexy, translatexz, translatewz, translatewy] <*> [x] <*> [scale 10 10 square]) pos
+
 draw :: System' Picture
 draw = do 
-  snekxy <- foldDraw $ \(Snake pos) -> pictures $ map (\x -> translatexy x . color (greyN 0.5) . scale 10 10 $ square) pos
-  snekxz <- foldDraw $ \(Snake pos) -> pictures $ map (\x -> translatexz x . color (greyN 0.5) . scale 10 10 $ square) pos
-  snekwz <- foldDraw $ \(Snake pos) -> pictures $ map (\x -> translatewz x . color (greyN 0.5) . scale 10 10 $ square) pos
-  snekwy <- foldDraw $ \(Snake pos) -> pictures $ map (\x -> translatewy x . color (greyN 0.5) . scale 10 10 $ square) pos
-  let snek = snekxy <> snekxz <> snekwz <> snekwy
-  deathScreenxy <- foldDraw $ \(DeathScreen (a, b)) -> pictures $ map (\x -> translatexy x . color red . scale 10 10 $ square) [a, b]
-  deathScreenxz <- foldDraw $ \(DeathScreen (a, b)) -> pictures $ map (\x -> translatexz x . color red . scale 10 10 $ square) [a, b]
-  deathScreenwz <- foldDraw $ \(DeathScreen (a, b)) -> pictures $ map (\x -> translatewz x . color red . scale 10 10 $ square) [a, b]
-  deathScreenwy <- foldDraw $ \(DeathScreen (a, b)) -> pictures $ map (\x -> translatewy x . color red . scale 10 10 $ square) [a, b]
-  let deathScreen = deathScreenxy <> deathScreenxz <> deathScreenwz <> deathScreenwy
-  applexy <- foldDraw $ \(Apple pos) -> translatexy pos . color green . scale 10 10 $ square
-  applexz <- foldDraw $ \(Apple pos) -> translatexz pos . color green . scale 10 10 $ square
-  applewz <- foldDraw $ \(Apple pos) -> translatewz pos . color green . scale 10 10 $ square
-  applewy <- foldDraw $ \(Apple pos) -> translatewy pos . color green . scale 10 10 $ square
-  let apple = applexy <> applexz <> applewz <> applewy
+  snek <- foldDraw $ \(Snake pos) -> color (greyN 0.5) $ translateSquares pos
+  deathScreen <- foldDraw $ \(DeathScreen (a, b)) -> color red $ translateSquares [a, b]
+  apple <- foldDraw $ \(Apple pos) -> color green $ translateSquares [pos]
   let field = color white . scale 10 10 $ box 69
   return $ field <> apple <> snek <> deathScreen
 
