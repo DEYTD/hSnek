@@ -1,10 +1,7 @@
-{-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TemplateHaskell            #-}
-{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
@@ -20,7 +17,9 @@ import Data.Semigroup (Semigroup)
 newtype Snake = Snake [V4 Float] deriving Show
 instance Component Snake where type Storage Snake = Unique Snake
 
-data Direction = DirXpos | DirXneg | DirYpos | DirYneg | DirZpos | DirZneg | DirWpos | DirWneg deriving (Show, Eq)
+data Dir = DirX | DirY | DirZ | DirW deriving (Show, Eq)
+data Sign = Pos | Neg deriving (Show, Eq)
+newtype Direction = Direction (Dir, Sign) deriving (Show, Eq)
 instance Component Direction where type Storage Direction = Unique Direction
 
 newtype Apple = Apple (V4 Float) deriving Show
@@ -46,7 +45,7 @@ stepTime = 0.2
 
 initialize :: System' ()
 initialize = do 
-  snekEty <- newEntity (Snake [V4 0 0 0 0], DirYpos)
+  snekEty <- newEntity (Snake [V4 0 0 0 0], Direction (DirY, Pos))
   replicateM_ 7 growTail
   newApple
 
@@ -60,16 +59,6 @@ triggerEvery dT period phase sys = do
       trigger = floor (t'/period) /= floor ((t'+dT)/period)
   when trigger $ void sys
 
-opposite :: Direction -> Direction
-opposite DirXpos = DirXneg
-opposite DirXneg = DirXpos
-opposite DirYpos = DirYneg
-opposite DirYneg = DirYpos
-opposite DirZpos = DirZneg
-opposite DirZneg = DirZpos
-opposite DirWpos = DirWneg
-opposite DirWneg = DirWpos
-
 stepDir :: System' ()
 stepDir = do
   InputQueue queue <- get global
@@ -77,7 +66,7 @@ stepDir = do
     then return()
     else do
       global $= InputQueue (init queue)
-      cmap $ \(d :: Direction) -> if d /= opposite (last queue) then (last queue) else (d)
+      cmap $ \(Direction (d,s)) -> if d /= (\(Direction d) -> fst d) (last queue) then last queue else Direction (d, s)
 
 newApple :: System' ()
 newApple = cmapM_ $ \(Snake snek) -> do
@@ -93,15 +82,13 @@ newApple = cmapM_ $ \(Snake snek) -> do
       return ()
 
 moveHead :: Direction -> V4 Float -> V4 Float
-moveHead d (V4 x y w z) = case d of
-  DirXpos -> (V4 (x + 10) y w z)
-  DirXneg -> (V4 (x - 10) y w z)
-  DirYpos -> (V4 x (y + 10) w z)
-  DirYneg -> (V4 x (y - 10) w z)
-  DirWpos -> (V4 x y (w + 10) z)
-  DirWneg -> (V4 x y (w - 10) z)
-  DirZpos -> (V4 x y w (z + 10))
-  DirZneg -> (V4 x y w (z - 10))
+moveHead (Direction (d, s)) (V4 x y w z) = case d of
+  DirX -> (V4 (x + 10 * eval s) y w z)
+  DirY -> (V4 x (y + 10 * eval s) w z)
+  DirW -> (V4 x y (w + 10 * eval s) z)
+  DirZ -> (V4 x y w (z + 10 * eval s))
+  where eval Pos = 1
+        eval Neg = -1
 
 stepPosition :: System' ()
 stepPosition = cmap $ \(Snake snek@(h : _), d :: Direction) -> Snake (moveHead d h : init snek)
@@ -134,14 +121,14 @@ restartGame = cmapM_ $ \ (DeathScreen ds, dsEty) -> do
   destroy dsEty (Proxy :: Proxy DeathScreen)
 
 handleEvent :: Event -> System' ()
-handleEvent (EventKey (SpecialKey KeyLeft)  Down   _ _) = global $~ mappend (InputQueue [DirXneg])
-handleEvent (EventKey (SpecialKey KeyRight) Down _ _) = global $~ mappend (InputQueue [DirXpos])
-handleEvent (EventKey (SpecialKey KeyUp) Down   _ _) = global $~ mappend (InputQueue [DirYpos])
-handleEvent (EventKey (SpecialKey KeyDown) Down _ _) = global $~ mappend (InputQueue [DirYneg])
-handleEvent (EventKey (Char 'a')  Down   _ _) = global $~ mappend (InputQueue [DirWneg])
-handleEvent (EventKey (Char 'd') Down _ _) = global $~ mappend (InputQueue [DirWpos])
-handleEvent (EventKey (Char 'w') Down   _ _) = global $~ mappend (InputQueue [DirZpos])
-handleEvent (EventKey (Char 's') Down _ _) = global $~ mappend (InputQueue [DirZneg])
+handleEvent (EventKey (SpecialKey KeyLeft)  Down   _ _) = global $~ mappend (InputQueue [Direction (DirX, Neg)])
+handleEvent (EventKey (SpecialKey KeyRight) Down _ _) = global $~ mappend (InputQueue [Direction (DirX, Pos)])
+handleEvent (EventKey (SpecialKey KeyUp) Down   _ _) = global $~ mappend (InputQueue [Direction (DirY, Pos)])
+handleEvent (EventKey (SpecialKey KeyDown) Down _ _) = global $~ mappend (InputQueue [Direction (DirY, Neg)])
+handleEvent (EventKey (Char 'a')  Down   _ _) = global $~ mappend (InputQueue [Direction (DirW, Neg)])
+handleEvent (EventKey (Char 'd') Down _ _) = global $~ mappend (InputQueue [Direction (DirW, Pos)])
+handleEvent (EventKey (Char 'w') Down   _ _) = global $~ mappend (InputQueue [Direction (DirZ, Pos)])
+handleEvent (EventKey (Char 's') Down _ _) = global $~ mappend (InputQueue [Direction (DirZ, Neg)])
 handleEvent (EventKey (Char 'r') Down _ _) = restartGame
 handleEvent (EventKey (SpecialKey KeyEsc) Down   _ _) = liftIO exitSuccess
 handleEvent _ = return ()
